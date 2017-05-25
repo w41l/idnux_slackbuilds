@@ -12,4 +12,10 @@ config() {
 }
 
 config etc/lightdm/lightdm.conf.new
+config etc/lightdm/users.conf.new
+config etc/lightdm/keys.conf.new
+config etc/lightdm/Xsession.new
 
+if [ -e /etc/lightdm/Xsession ]; then
+    chmod +x /etc/lightdm/Xsession
+fi

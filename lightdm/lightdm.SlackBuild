@@ -57,6 +57,29 @@ fi
 
 set -e
 
+# Enable or disable building Qt/Qt5 support
+if [ "${QT_VERSION}" = "4" ]; then
+    build_qt="--enable-liblightdm-qt --disable-liblightdm-qt5"
+    export MOC4='moc'
+elif [ "${QT_VERSION}" = "5" ]; then
+    build_qt="--disable-liblightdm-qt --enable-liblightdm-qt5"
+    export MOC5='moc-qt5'
+else
+    build_qt="--disable-liblightdm-qt --disable-liblightdm-qt5"
+fi
+
+# If we get here and don't have a lightdm user/group, add one.
+# Otherwise a few directories in the package will have wrong permissions.
+if [ -z "$(getent group lightdm)" ]; then
+    echo "groupadd -fg 620 lightdm"
+    exit 1
+fi
+
+if [ -z "$(getent shadow lightdm)" ]; then
+  echo 'useradd -c "Light Display Manager" -d /var/lib/lightdm -u 620 -g lightdm -s /sbin/nologin lightdm'
+  exit 1
+fi
+
 unset DOWNLOAD
 eval `cat $PRGNAM.info | grep "DOWNLOAD="`
 if [ ! -e $(basename $DOWNLOAD) ]; then
@@ -81,14 +104,6 @@ find -L . \
  \( -perm 666 -o -perm 664 -o -perm 640 -o -perm 600 -o -perm 444 \
   -o -perm 440 -o -perm 400 \) -exec chmod 644 {} \;
 
-# If we get here and don't have a lightdm user/group, add one.
-# Otherwise a few directories in the package will have wrong permissions.
-if ! grep -q "^lightdm:" /etc/passwd ; then
-  groupadd -fg 620 lightdm
-  useradd -c "Light Display Manager" -d /var/lib/lightdm -u 620 -g lightdm -s /sbin/nologin lightdm
-fi
-
-
 CFLAGS="$SLKCFLAGS" \
 CXXFLAGS="$SLKCFLAGS" \
 ./configure \
@@ -103,17 +118,19 @@ CXXFLAGS="$SLKCFLAGS" \
   --docdir=/usr/doc/$PRGNAM-$VERSION \
   --with-greeter-user=lightdm \
   --with-greeter-session=lightdm-gtk-greeter \
-  --disable-liblightdm-qt \
-  --disable-liblightdm-qt5 \
   --disable-static \
   --disable-test \
+  $build_qt \
   --build=$ARCH-slackware-linux
 
 make $NUMJOBS
 make install DESTDIR=$PKG
 
-cat $CWD/Xsession > $PKG/etc/lightdm/Xsession
-chmod +x $PKG/etc/lightdm/Xsession
+cat $CWD/Xsession > $PKG/etc/lightdm/Xsession.new
+mv $PKG/etc/lightdm/lightdm.conf $PKG/etc/lightdm/lightdm.conf.new
+mv $PKG/etc/lightdm/users.conf $PKG/etc/lightdm/users.conf.new
+mv $PKG/etc/lightdm/keys.conf $PKG/etc/lightdm/keys.conf.new
+
 rm -rf $PKG/etc/init
 
 mkdir -p -m=755 $PKG/var/cache/lightdm
@@ -124,11 +141,9 @@ chown lightdm:lightdm -R $PKG/var/lib/lightdm{,-data}
 chgrp lightdm $PKG/var/log/lightdm
 
 # apparmor package. Bug #494426
- if [[ -d $PKG/etc/apparmor.d ]]; then
-   rm -r "$PKG/etc/apparmor.d" || die \
-			"Failed to remove apparmor profiles"
- fi
-
+if [[ -d $PKG/etc/apparmor.d ]]; then
+   rm -r "$PKG/etc/apparmor.d"
+fi
 
 # PAM
 cat $CWD/lightdm.pam > $PKG/etc/pam.d/lightdm
